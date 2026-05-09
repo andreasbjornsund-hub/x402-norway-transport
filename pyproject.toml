@@ -1,7 +1,7 @@
 [project]
-name = "x402-agent-template"
+name = "x402-norway-transport"
 version = "0.1.0"
-description = "x402 micropayment agent — replace this description"
+description = "x402 micropayment agent for Norwegian public transport (Entur)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
