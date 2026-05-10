@@ -85,16 +85,38 @@ async def test_journey_geocodes_then_calls_trip(main_module, fake_entur):
 
 
 async def test_journey_with_id_skips_geocoder(main_module, fake_entur):
-    """Pass NSR:StopPlace:... directly — should not hit the geocoder."""
+    """Pass NSR:StopPlace:... directly — should not hit the geocoder.
+
+    Empty options now raise 404 (x402 SDK skips settle on 4xx so the user
+    isn't charged for an empty itinerary).
+    """
     fake_entur.stub_post("/journey-planner/v3/graphql", 200, {"data": {"trip": {"tripPatterns": []}}})
-    out = await main_module.journey(
-        response=Response(),
-        from_="NSR:StopPlace:1", to="NSR:StopPlace:2",
-        when=None, options=3,
-    )
-    assert out["options"] == []
+    with pytest.raises(HTTPException) as exc:
+        await main_module.journey(
+            response=Response(),
+            from_="NSR:StopPlace:1", to="NSR:StopPlace:2",
+            when=None, options=3,
+        )
+    assert exc.value.status_code == 404
     # No geocoder calls
     assert all("/geocoder/" not in url for _, url, _ in fake_entur.calls)
+
+
+async def test_stops_search_404_on_no_matches(main_module, fake_entur):
+    fake_entur.stub_get("/geocoder/v1/autocomplete", 200, {"features": []})
+    with pytest.raises(HTTPException) as exc:
+        await main_module.stops_search(response=Response(), q="zzz-no-match", lat=None, lon=None, limit=10)
+    assert exc.value.status_code == 404
+
+
+async def test_departures_404_on_no_departures(main_module, fake_entur):
+    fake_entur.stub_get("/geocoder/v1/autocomplete", 200, _geocoder_response())
+    fake_entur.stub_post("/journey-planner/v3/graphql", 200, {"data": {"stopPlace": {
+        "id": "NSR:StopPlace:58366", "name": "Jernbanetorget", "estimatedCalls": [],
+    }}})
+    with pytest.raises(HTTPException) as exc:
+        await main_module.departures(response=Response(), stop="jernbanetorget", minutes=30)
+    assert exc.value.status_code == 404
 
 
 async def test_journey_404_on_unknown_place(main_module, fake_entur):

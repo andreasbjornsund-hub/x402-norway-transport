@@ -438,8 +438,12 @@ async def journey(
         data, _ = await entur.trip(_http, from_id, to_id, date_time, num=options)
     except EnturError as e:
         raise HTTPException(503, f"Entur upstream: {e.message}")
+    parsed = parsers.parse_trip(data, from_label, to_label, when)
+    if not parsed.get("options"):
+        # 4xx so x402 SDK skips settle — no charge for an empty itinerary
+        raise HTTPException(404, f"No journey options between '{from_label}' and '{to_label}'")
     response.headers["X-Cache"] = "MISS"  # never cached
-    return parsers.parse_trip(data, from_label, to_label, when)
+    return parsed
 
 
 @app.get("/departures")
@@ -457,6 +461,10 @@ async def departures(
     parsed = parsers.parse_departures(data)
     if not parsed.get("stop_id"):
         raise HTTPException(404, f"No stop place found for '{stop}'")
+    if not parsed.get("departures"):
+        # 4xx so x402 SDK skips settle — no charge if the stop has no
+        # scheduled departures in the requested window
+        raise HTTPException(404, f"No departures from '{stop}' in next {minutes} minutes")
     response.headers["X-Cache"] = "MISS"  # never cached
     return parsed
 
@@ -474,8 +482,12 @@ async def stops_search(
         data, hit = await entur.stops_search(_http, q, lat=lat, lon=lon, size=limit)
     except EnturError as e:
         raise HTTPException(503, f"Entur upstream: {e.message}")
+    results = parsers.parse_geocoder_results(data, limit=limit)
+    if not results:
+        # 4xx so x402 SDK skips settle — no charge for empty results
+        raise HTTPException(404, f"No stops match '{q}'")
     _set_cache_header(response, hit)
-    return {"results": parsers.parse_geocoder_results(data, limit=limit)}
+    return {"results": results}
 
 
 @app.get("/line/{line_id}")
