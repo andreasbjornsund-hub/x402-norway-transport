@@ -38,6 +38,44 @@ def test_geocoder_empty(parsers_module):
     assert parsers_module.best_geocoder_match({}) is None
 
 
+def test_geocoder_prefers_railstation_over_groupofstopplaces(parsers_module):
+    """Real-world 'Oslo S' geocoder response: GroupOfStopPlaces comes first
+    in the API order, but the StopPlace is what JourneyPlanner can actually
+    plan trips with."""
+    payload = {"features": [
+        {"geometry": {"coordinates": [10.7, 59.9]},
+         "properties": {"id": "NSR:GroupOfStopPlaces:1", "name": "Oslo", "category": ["GroupOfStopPlaces"]}},
+        {"geometry": {"coordinates": [10.75, 59.91]},
+         "properties": {"id": "NSR:StopPlace:59872", "name": "Oslo S",
+                        "category": ["onstreetBus", "railStation"]}},
+        {"geometry": {"coordinates": [10.75, 59.91]},
+         "properties": {"id": "OSM:TopographicPlace:1", "name": "Cafe Oslo S", "category": ["poi"]}},
+    ]}
+    m = parsers_module.best_geocoder_match(payload)
+    assert m["id"] == "NSR:StopPlace:59872"
+
+
+def test_geocoder_prefers_onstreet_over_group(parsers_module):
+    payload = {"features": [
+        {"geometry": {"coordinates": [10.7, 59.9]},
+         "properties": {"id": "NSR:GroupOfStopPlaces:7", "name": "Bergen", "category": ["GroupOfStopPlaces"]}},
+        {"geometry": {"coordinates": [10.71, 59.91]},
+         "properties": {"id": "NSR:StopPlace:99", "name": "Stop", "category": ["onstreetBus"]}},
+    ]}
+    m = parsers_module.best_geocoder_match(payload)
+    assert m["id"] == "NSR:StopPlace:99"
+
+
+def test_geocoder_falls_back_to_only_feature(parsers_module):
+    """If only a POI is returned, use it rather than nothing."""
+    payload = {"features": [
+        {"geometry": {"coordinates": [10.0, 60.0]},
+         "properties": {"id": "OSM:1", "name": "Random POI", "category": ["poi"]}},
+    ]}
+    m = parsers_module.best_geocoder_match(payload)
+    assert m["id"] == "OSM:1"
+
+
 def test_trip_parses_pattern(parsers_module):
     payload = {"data": {"trip": {"tripPatterns": [{
         "duration": 23820,

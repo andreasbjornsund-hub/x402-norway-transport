@@ -80,8 +80,37 @@ def parse_geocoder_results(data: dict, limit: int = 10) -> list[dict]:
 
 
 def best_geocoder_match(data: dict) -> dict | None:
-    rows = parse_geocoder_results(data, limit=1)
-    return rows[0] if rows else None
+    """Pick the most useful feature for journey planning.
+
+    The geocoder often returns a city-wide GroupOfStopPlaces first (e.g.
+    "Oslo S" → NSR:GroupOfStopPlaces:1 "Oslo"), which JourneyPlanner can't
+    actually plan trips between. Rank by category to prefer concrete stops.
+    """
+    rows = parse_geocoder_results(data, limit=10)
+    if not rows:
+        return None
+
+    high_priority = {"railStation", "metroStation", "busStation", "ferryStop", "airport", "coachStation"}
+    onstreet = {"onstreetBus", "onstreetTram"}
+
+    def _priority(r: dict) -> int:
+        rid = r.get("id", "") or ""
+        cats = set(r.get("category") or [])
+        if cats & high_priority:
+            return 1
+        if cats & onstreet:
+            return 2
+        if rid.startswith("NSR:StopPlace:"):
+            return 3
+        if rid.startswith("NSR:Quay:"):
+            return 4
+        if rid.startswith("NSR:GroupOfStopPlaces:"):
+            return 5
+        # POIs, OSM topographic places, etc. — drop unless nothing else
+        return 9
+
+    rows.sort(key=_priority)
+    return rows[0]
 
 
 # ── Trip / journey ──────────────────────────────────────────────────
